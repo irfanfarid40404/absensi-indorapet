@@ -10,15 +10,60 @@ use Illuminate\Validation\Rule;
 class EmployeeController extends Controller
 {
     /**
-     * Display a listing of the employees.
+     * Display a listing of the employees with search and pagination.
      */
-    public function index()
+    public function index(Request $request)
     {
-        $employees = Employee::orderBy('aktif', 'desc')
+        $search = $request->input('search', '');
+        $departemenFilter = $request->input('departemen', 'ALL');
+        $statusFilter = $request->input('status', 'ALL');
+        $perPage = (int) $request->input('per_page', 15);
+        if (!in_array($perPage, [10, 15, 25, 50, 100])) {
+            $perPage = 15;
+        }
+
+        $query = Employee::query();
+
+        if (!empty($search)) {
+            $query->where(function ($q) use ($search) {
+                $q->where('nama', 'like', "%{$search}%")
+                  ->orWhere('kode_karyawan', 'like', "%{$search}%");
+            });
+        }
+
+        if ($departemenFilter !== 'ALL') {
+            $query->where('departemen', $departemenFilter);
+        }
+
+        if ($statusFilter === 'active') {
+            $query->where('aktif', true);
+        } elseif ($statusFilter === 'inactive') {
+            $query->where('aktif', false);
+        }
+
+        // Stats
+        $totalEmployees = Employee::count();
+        $totalActive = Employee::where('aktif', true)->count();
+        $totalInactive = Employee::where('aktif', false)->count();
+
+        $employees = $query->orderBy('aktif', 'desc')
             ->orderBy('nama', 'asc')
-            ->get();
-            
-        return view('admin.karyawan.index', compact('employees'));
+            ->paginate($perPage)
+            ->withQueryString();
+
+        $departments = Employee::distinct()->pluck('departemen')->sort();
+
+        return view('admin.karyawan.index', compact(
+            'employees',
+            'departments',
+            'search',
+            'departemenFilter',
+            'statusFilter',
+            'perPage',
+            'totalEmployees',
+            'totalActive',
+            'totalInactive'
+        ));
     }
 
     /**

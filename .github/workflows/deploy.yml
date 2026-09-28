@@ -1,0 +1,41 @@
+name: Deploy to cPanel Subdomain
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  web-deploy:
+    name: Build & Deploy Laravel
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.3'
+        extensions: mbstring, xml, ctype, iconv, intl, pdo_mysql, bcmath, zip, gd
+        coverage: none
+
+    - name: Install Composer Dependencies
+      run: |
+        composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
+
+    - name: Sync Files via FTP
+      uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      with:
+        server: ${{ secrets.FTP_SERVER }}
+        username: ${{ secrets.FTP_USERNAME }}
+        password: ${{ secrets.FTP_PASSWORD }}
+        server-dir: ./
+        exclude: |
+          **/.git*
+          **/.git*/**
+          node_modules/**
+          tests/**
+          .env
+          .env.example
+          database/database.sqlite
+          README.md

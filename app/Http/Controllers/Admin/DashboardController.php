@@ -20,23 +20,49 @@ class DashboardController extends Controller
         $dari = $request->input('dari', Carbon::now()->startOfMonth()->toDateString());
         $sampai = $request->input('sampai', Carbon::now()->toDateString());
         $departemenFilter = $request->input('departemen', 'ALL');
+        $search = $request->input('search', '');
+        $perPage = (int) $request->input('per_page', 15);
+        if (!in_array($perPage, [10, 15, 25, 50, 100])) {
+            $perPage = 15;
+        }
+
+        // Load jam masuk standar setting
+        $jamMasukStandar = Setting::getValue('jam_masuk_standar', '08:00');
 
         // Query builder
         $query = Attendance::with('employee')
-            ->whereBetween('tanggal', [$dari, $sampai]);
+            ->join('employees', 'attendances.employee_id', '=', 'employees.id')
+            ->select('attendances.*')
+            ->whereBetween('attendances.tanggal', [$dari, $sampai]);
 
         if ($departemenFilter !== 'ALL') {
-            $query->whereHas('employee', function ($q) use ($departemenFilter) {
-                $q->where('departemen', $departemenFilter);
+            $query->where('employees.departemen', $departemenFilter);
+        }
+
+        if (!empty($search)) {
+            $query->where(function ($q) use ($search) {
+                $q->where('employees.nama', 'like', "%{$search}%")
+                  ->orWhere('employees.kode_karyawan', 'like', "%{$search}%");
             });
         }
 
-        // Sort by tanggal desc, employee name asc
-        $attendances = $query->join('employees', 'attendances.employee_id', '=', 'employees.id')
-            ->select('attendances.*')
-            ->orderBy('attendances.tanggal', 'desc')
+        // Calculate summary stats on filtered dataset
+        $totalRecords = (clone $query)->count();
+        $tepatWaktuCount = (clone $query)
+            ->whereNotNull('attendances.jam_masuk')
+            ->where('attendances.jam_masuk', '<=', $jamMasukStandar . ':00')
+            ->count();
+        $terlambatCount = (clone $query)
+            ->whereNotNull('attendances.jam_masuk')
+            ->where('attendances.jam_masuk', '>', $jamMasukStandar . ':00')
+            ->count();
+        $totalKaryawanAktif = Employee::where('aktif', true)->count();
+
+        // Sort by tanggal desc, employee name asc and paginate
+        $attendances = $query->orderBy('attendances.tanggal', 'desc')
             ->orderBy('employees.nama', 'asc')
-            ->get();
+            ->paginate($perPage)
+            ->withQueryString();
 
         // Get list of active departments for filter dropdown
         $departments = Employee::distinct()->pluck('departemen')->sort();
@@ -44,10 +70,21 @@ class DashboardController extends Controller
         // Get list of all employees for manual entry/edit modal
         $employees = Employee::orderBy('nama')->get();
 
-        // Load jam masuk standar setting
-        $jamMasukStandar = Setting::getValue('jam_masuk_standar', '08:00');
-
-        return view('admin.dashboard', compact('attendances', 'departments', 'employees', 'dari', 'sampai', 'departemenFilter', 'jamMasukStandar'));
+        return view('admin.dashboard', compact(
+            'attendances',
+            'departments',
+            'employees',
+            'dari',
+            'sampai',
+            'departemenFilter',
+            'search',
+            'perPage',
+            'jamMasukStandar',
+            'totalRecords',
+            'tepatWaktuCount',
+            'terlambatCount',
+            'totalKaryawanAktif'
+        ));
     }
 
     /**

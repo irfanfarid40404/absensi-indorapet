@@ -14,9 +14,21 @@ class AttendanceController extends Controller
      */
     public function index()
     {
+        $today = Carbon::today()->toDateString();
+        
         // Load active employees sorted by name
         $employees = Employee::where('aktif', true)->orderBy('nama')->get();
-        return view('attendance.index', compact('employees'));
+        
+        // Load today's attendances mapped by employee_id for status indicators
+        $todayAttendances = Attendance::where('tanggal', $today)
+            ->whereNotNull('jam_masuk')
+            ->get()
+            ->keyBy('employee_id');
+            
+        $departments = $employees->pluck('departemen')->unique()->sort()->values();
+        $jamMasukStandar = \App\Models\Setting::getValue('jam_masuk_standar', '08:00');
+
+        return view('attendance.index', compact('employees', 'todayAttendances', 'departments', 'jamMasukStandar'));
     }
 
     /**
